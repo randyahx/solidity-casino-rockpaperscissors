@@ -23,6 +23,7 @@ contract Game is ReentrancyGuard {
         GameState gameState;
         uint256 betAmount;
         uint256 revealDeadline;
+        uint256 roomId;
     }
 
     // Constants
@@ -33,7 +34,7 @@ contract Game is ReentrancyGuard {
     // State variables
     address public owner;
     mapping(uint256 => Room) public rooms;
-    uint256 public roomCount; // race condition(?) since the room index is generated using this. to be improved with RanDAO.
+    uint256 public roomCount; // To generate unique room ids
 
     // Events
     event MoveRevealed(uint256 roomId, address player, Move move);
@@ -50,10 +51,6 @@ contract Game is ReentrancyGuard {
         _;
     }
 
-    function fallback() external {
-        revert("Invalid function call");
-    }
-
     // Player 1 creates a room with a hashed move
     function createRoom(bytes32 _hashedMove) external payable nonReentrant {
         require(msg.value.getConversionRate(priceFeed) >= MIN_BET_USD, "Bet amount is below the minimum requirement");
@@ -67,6 +64,7 @@ contract Game is ReentrancyGuard {
         room.players[0] = Player(msg.sender, _hashedMove, Move.None);
         room.betAmount = msg.value;
         room.gameState = GameState.WaitingForPlayer2;
+        room.roomId = roomCount;
     }
 
     // Player 2 joins the room with a hashed move
@@ -98,7 +96,7 @@ contract Game is ReentrancyGuard {
         }
 
         if (room.players[0].move != Move.None && room.players[1].move != Move.None) {
-            determineWinner(_roomId);
+            determineWinner(room);
         }
     }
 
@@ -116,22 +114,21 @@ contract Game is ReentrancyGuard {
         }
 
         if (winner != address(0)) {
-            uint256 game_fee = room.betAmount / GAME_FEE_PERCENT_DIVISOR;
-            payable(winner).transfer(room.betAmount - game_fee); // Pay winner
+            payWinner(room, winner);
+        } else {
+            refundPlayers(room);
+            emit GameDraw(_roomId, room.players[0].addr, room.players[1].addr);
         }
-
-        emit GameWin(_roomId, winner, address(this).balance);
 
         resetGame(_roomId);
     }
 
-    // Owner should pay the gas fees to withdraw
-    // so didn't implement it in a way where the owner is paid after every game
-    function withdraw(uint256 _amount) external onlyOwner nonReentrant {
-        require(_amount <= address(this).balance, "Withdraw amount exceeds balance");
-        (bool success,) = owner.call{value: _amount}("");
-        require(success, "Withdraw failed");
-    }
+    // Owner can only withdraw game fees, not the entire balance
+    // function withdraw(uint256 _amount) external onlyOwner nonReentrant {
+    // require(_amount <= address(this).balance, "Withdraw amount exceeds contract balance");
+    // (bool success,) = owner.call{value: _amount}("");
+    // require(success, "Withdraw failed");
+    // }
 
     function getRoomStatus(uint256 _roomId) external view returns (string memory) {
         Room storage room = rooms[_roomId];
@@ -144,52 +141,55 @@ contract Game is ReentrancyGuard {
             return "Room is waiting for player 2";
         } else if (room.gameState == GameState.Reveal) {
             return "Room is in reveal state";
-        } else if (room.gameState == GameState.Completed) {
-            return "Room has completed the game";
         } else {
             return "Unknown room state.";
         }
     }
 
-    function determineWinner(uint256 _roomId) internal {
-        Room storage room = rooms[_roomId];
+    function determineWinner(Room memory _room) internal {
         address winner;
 
-        if (room.players[0].move == room.players[1].move) {
+        if (_room.players[0].move == _room.players[1].move) {
             // Draw, refund both players
-            refundPlayers(_roomId);
+            refundPlayers(_room);
         } else if (
-            (room.players[0].move == Move.Rock && room.players[1].move == Move.Scissors)
-                || (room.players[0].move == Move.Paper && room.players[1].move == Move.Rock)
-                || (room.players[0].move == Move.Scissors && room.players[1].move == Move.Paper)
+            (_room.players[0].move == Move.Rock && _room.players[1].move == Move.Scissors)
+                || (_room.players[0].move == Move.Paper && _room.players[1].move == Move.Rock)
+                || (_room.players[0].move == Move.Scissors && _room.players[1].move == Move.Paper)
         ) {
             // Player 1 wins
-            winner = room.players[0].addr;
+            winner = _room.players[0].addr;
         } else {
             // Player 2 wins
-            winner = room.players[1].addr;
+            winner = _room.players[1].addr;
         }
 
         if (winner != address(0)) {
-            uint256 game_fees = room.betAmount / GAME_FEE_PERCENT_DIVISOR;
-            uint256 prize = room.betAmount - game_fees;
-
-            (bool success,) = winner.call{value: prize}(""); // Pay winner
-            require(success, "Winner payment failed");
-            emit GameWin(_roomId, winner, prize);
+            payWinner(_room, winner);
         } else {
-            emit GameDraw(_roomId, room.players[0].addr, room.players[1].addr);
+            emit GameDraw(_room.roomId, _room.players[0].addr, _room.players[1].addr);
         }
 
-        resetGame(_roomId);
+        resetGame(_room.roomId);
     }
 
-    function refundPlayers(uint256 _roomId) internal {
-        Room storage room = rooms[_roomId];
-        uint256 refundAmount = room.betAmount / 2;   
-        (bool successPlayer1,) = room.players[0].addr.call{value: refundAmount}("");  
+    function payWinner(Room memory room, address _winner) internal {
+        uint256 game_fee = room.betAmount / GAME_FEE_PERCENT_DIVISOR;
+        uint256 prize = room.betAmount - game_fee;
+
+        (bool successPayWinner,) = _winner.call{value: prize}(""); // Pay winner
+        require(successPayWinner, "Winner payment failed");
+        (bool successPayOwner,) = owner.call{value: game_fee}(""); // Pay owner
+        require(successPayOwner, "Owner game fees payment failed");
+
+        emit GameWin(room.roomId, _winner, prize);
+    }
+
+    function refundPlayers(Room memory _room) internal {
+        uint256 refundAmount = _room.betAmount / 2;
+        (bool successPlayer1,) = _room.players[0].addr.call{value: refundAmount}("");
         require(successPlayer1, "Refund failed for player 1");
-        (bool successPlayer2,) = room.players[1].addr.call{value: refundAmount}("");  
+        (bool successPlayer2,) = _room.players[1].addr.call{value: refundAmount}("");
         require(successPlayer2, "Refund failed for player 2");
     }
 

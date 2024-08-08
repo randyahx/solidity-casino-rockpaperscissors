@@ -23,7 +23,7 @@ contract GameTest is Test {
     }
 
     function test_IsOwner() external {
-        assertEq(game.owner(), address(msg.sender));
+        assertEq(game.getOwner(), address(msg.sender));
     }
 
     function test_IsMinimumAmount() external {
@@ -40,28 +40,6 @@ contract GameTest is Test {
         game.createRoom{value: 1}(hashedMove);
     }
 
-    function test_ShouldRevert_WithdrawNotByOwner() external {
-        // Fund contract
-        vm.deal(address(this), 10 ether);
-        // Withdraw using non-owner account
-        vm.prank(TEST_PLAYER1);
-        vm.expectRevert();
-        game.withdraw(10 ether);
-    }
-
-    function test_WithdrawByOwner() external {
-        // Fund contract
-        vm.prank(TEST_PLAYER1);
-        vm.deal(address(game), 10 ether);
-        // Check initial owner balance
-        uint256 startingOwnerBalance = game.getOwner().balance;
-        uint256 startingContractBalance = address(game).balance;
-        // Withdraw using owner account
-        vm.prank(game.getOwner());
-        game.withdraw(10 ether);
-        assertEq(game.getOwner().balance, startingOwnerBalance + startingContractBalance);
-    }
-
     function test_WinGame() external {
         Move move_player1 = Move.Scissors;
         string memory secret_player1 = "secret1";
@@ -75,6 +53,7 @@ contract GameTest is Test {
         uint256 startingBalancePlayer1 = TEST_PLAYER1.balance;
         uint256 startingBalancePlayer2 = TEST_PLAYER2.balance;
         uint256 startingContractBalance = address(game).balance;
+        uint256 startingOwnerBalance = game.getOwner().balance;
 
         // Create room
         vm.prank(TEST_PLAYER1);
@@ -97,7 +76,8 @@ contract GameTest is Test {
         uint256 game_fee = (bet_player1 + bet_player2) / game.GAME_FEE_PERCENT_DIVISOR();
         assertEq(TEST_PLAYER1.balance, startingBalancePlayer1 + bet_player2 - game_fee);
         assertEq(TEST_PLAYER2.balance, startingBalancePlayer2 - bet_player2);
-        assertEq(address(game).balance, startingContractBalance + game_fee);
+        assertEq(address(game).balance, startingContractBalance);
+        assertEq(game.getOwner().balance, startingOwnerBalance + game_fee);
     }
 
     function test_DrawGame() external {
@@ -113,6 +93,7 @@ contract GameTest is Test {
         uint256 startingBalancePlayer1 = TEST_PLAYER1.balance;
         uint256 startingBalancePlayer2 = TEST_PLAYER2.balance;
         uint256 startingContractBalance = address(game).balance;
+        uint256 startingOwnerBalance = game.getOwner().balance;
 
         // Create room
         vm.prank(TEST_PLAYER1);
@@ -133,10 +114,32 @@ contract GameTest is Test {
 
         // Check balance (Player 1 balance, Player 2 balance, Contract balance)
         assertEq(TEST_PLAYER1.balance, startingBalancePlayer1);
-        console.log("player1");
         assertEq(TEST_PLAYER2.balance, startingBalancePlayer2);
-        console.log("player2");
         assertEq(address(game).balance, startingContractBalance);
-        console.log("contract balance");
+        assertEq(game.getOwner().balance, startingOwnerBalance);
     }
+
+    /**
+     * function test_ShouldRevert_WithdrawNotByOwner() external {
+     *     // Fund contract
+     *     vm.deal(address(this), 10 ether);
+     *     // Withdraw using non-owner account
+     *     vm.prank(TEST_PLAYER1);
+     *     vm.expectRevert();
+     *     game.withdraw(10 ether);
+     * }
+     *
+     * function test_WithdrawByOwner() external {
+     *     // Fund contract
+     *     vm.prank(TEST_PLAYER1);
+     *     vm.deal(address(game), 10 ether);
+     *     // Check initial owner balance
+     *     uint256 startingOwnerBalance = game.getOwner().balance;
+     *     uint256 startingContractBalance = address(game).balance;
+     *     // Withdraw using owner account
+     *     vm.prank(game.getOwner());
+     *     game.withdraw(10 ether);
+     *     assertEq(game.getOwner().balance, startingOwnerBalance + startingContractBalance);
+     * }
+     */
 }

@@ -10,6 +10,7 @@ enum Move {
 }
 
 enum GameState {
+    None,
     WaitingForPlayer2,
     Reveal,
     Completed
