@@ -63,87 +63,80 @@ contract GameTest is Test {
     }
 
     function test_WinGame() external {
-        // Create players
-        Game.Player memory player1 = new Game.Player();
-        player1.move = Move.Scissors;
-        player1.addr = TEST_PLAYER1;
-        uint256 bet_player1 = 100 ether;
+        Move move_player1 = Move.Scissors;
         string memory secret_player1 = "secret1";
+        uint256 bet_player1 = 100 ether;
 
-        Game.Player memory player2 = new Game.Player();
-        player2.move = Move.Paper;
-        player2.addr = TEST_PLAYER2;
-        uint256 bet_player2 = 100 ether;
+        Move move_player2 = Move.Paper;
         string memory secret_player2 = "secret2";
+        uint256 bet_player2 = 100 ether;
 
         // Get starting balance
-        uint256 startingBalancePlayer1 = player1.addr.balance;
-        uint256 startingBalancePlayer2 = player2.addr.balance;
+        uint256 startingBalancePlayer1 = TEST_PLAYER1.balance;
+        uint256 startingBalancePlayer2 = TEST_PLAYER2.balance;
         uint256 startingContractBalance = address(game).balance;
 
-        (uint256 balancePlayer1, uint256 balancePlayer2, uint256 balanceContract) =
-            playGame(player1, player2, bet_player1, bet_player2, secret_player1, secret_player2);
+        // Create room
+        vm.prank(TEST_PLAYER1);
+        bytes32 hashedMovePlayer1 = keccak256(abi.encodePacked(move_player1, secret_player1));
+        game.createRoom{value: bet_player1}(hashedMovePlayer1);
+
+        // Join room
+        vm.prank(TEST_PLAYER2);
+        bytes32 hashedMovePlayer2 = keccak256(abi.encodePacked(move_player2, secret_player2));
+        game.joinRoom{value: bet_player2}(1, hashedMovePlayer2);
+
+        // Reveal move
+        vm.prank(TEST_PLAYER1);
+        game.revealMove(1, move_player1, secret_player1);
+
+        vm.prank(TEST_PLAYER2);
+        game.revealMove(1, move_player2, secret_player2);
 
         // Check balance (Player 1 balance, Player 2 balance, Contract balance)
         uint256 game_fee = (bet_player1 + bet_player2) / game.GAME_FEE_PERCENT_DIVISOR();
-        assertEq(balancePlayer1, startingBalancePlayer1 + bet_player2 - game_fee);
-        assertEq(balancePlayer2, startingBalancePlayer2 - bet_player2);
-        assertEq(balanceContract, startingContractBalance + game_fee);
+        assertEq(TEST_PLAYER1.balance, startingBalancePlayer1 + bet_player2 - game_fee);
+        assertEq(TEST_PLAYER2.balance, startingBalancePlayer2 - bet_player2);
+        assertEq(address(game).balance, startingContractBalance + game_fee);
     }
 
     function test_DrawGame() external {
-        // Create players
-        Game.Player memory player1 = new Game.Player();
-        player1.move = Move.Scissors;
-        player1.addr = TEST_PLAYER1;
-        uint256 bet_player1 = 100 ether;
+        Move move_player1 = Move.Scissors;
         string memory secret_player1 = "secret1";
+        uint256 bet_player1 = 100 ether;
 
-        Game.Player memory player2 = new Game.Player();
-        player2.move = Move.Scissors;
-        player2.addr = TEST_PLAYER2;
-        uint256 bet_player2 = 100 ether;
+        Move move_player2 = Move.Scissors;
         string memory secret_player2 = "secret2";
+        uint256 bet_player2 = 100 ether;
 
         // Get starting balance
-        uint256 startingBalancePlayer1 = player1.addr.balance;
-        uint256 startingBalancePlayer2 = player2.addr.balance;
+        uint256 startingBalancePlayer1 = TEST_PLAYER1.balance;
+        uint256 startingBalancePlayer2 = TEST_PLAYER2.balance;
         uint256 startingContractBalance = address(game).balance;
 
-        (uint256 balancePlayer1, uint256 balancePlayer2, uint256 balanceContract) =
-            playGame(player1, player2, bet_player1, bet_player2, secret_player1, secret_player2);
-
-        // Check balance (Player 1 balance, Player 2 balance, Contract balance)
-        assertEq(balancePlayer1, startingBalancePlayer1);
-        assertEq(balancePlayer2, startingBalancePlayer2);
-        assertEq(balanceContract, startingContractBalance);
-    }
-
-    function playGame(
-        Game.Player memory player1,
-        Game.Player memory player2,
-        uint256 betAmountPlayer1,
-        uint256 betAmountPlayer2,
-        string memory secretPlayer1,
-        string memory secretPlayer2
-    ) internal returns (uint256 balancePlayer1, uint256 balancePlayer2, uint256 balanceContract) {
         // Create room
-        vm.prank(player1.addr);
-        bytes32 hashedMovePlayer1 = keccak256(abi.encodePacked(player1.move, secretPlayer1));
-        game.createRoom{value: betAmountPlayer1}(hashedMovePlayer1);
+        vm.prank(TEST_PLAYER1);
+        bytes32 hashedMovePlayer1 = keccak256(abi.encodePacked(move_player1, secret_player1));
+        game.createRoom{value: bet_player1}(hashedMovePlayer1);
 
         // Join room
-        vm.prank(player2.addr);
-        bytes32 hashedMovePlayer2 = keccak256(abi.encodePacked(player2.move, secretPlayer2));
-        game.joinRoom{value: betAmountPlayer2}(1, hashedMovePlayer2);
+        vm.prank(TEST_PLAYER2);
+        bytes32 hashedMovePlayer2 = keccak256(abi.encodePacked(move_player2, secret_player2));
+        game.joinRoom{value: bet_player2}(1, hashedMovePlayer2);
 
         // Reveal move
-        vm.prank(player1.addr);
-        game.revealMove(1, player1.move, player1.secret);
+        vm.prank(TEST_PLAYER1);
+        game.revealMove(1, move_player1, secret_player1);
 
-        vm.prank(player2.addr);
-        game.revealMove(1, player2.move, player2.secret);
+        vm.prank(TEST_PLAYER2);
+        game.revealMove(1, move_player2, secret_player2);
 
-        return (player1.balance, player2.balance, address(game).balance);
+        // Check balance (Player 1 balance, Player 2 balance, Contract balance)
+        assertEq(TEST_PLAYER1.balance, startingBalancePlayer1);
+        console.log("player1");
+        assertEq(TEST_PLAYER2.balance, startingBalancePlayer2);
+        console.log("player2");
+        assertEq(address(game).balance, startingContractBalance);
+        console.log("contract balance");
     }
 }
